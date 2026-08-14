@@ -1,0 +1,175 @@
+/* Import Font Modern dari Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  /* Menggunakan font modern */
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #f1f5f9; /* Warna abu-abu kebiruan yang soft */
+  color: #1e293b;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+.container {
+  width: 100%;
+  max-width: 480px;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header Styling (Pusatkan konten dengan Flexbox) */
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Memaksa logo dan badge persis di tengah */
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+/* Styling Gambar Logo */
+.brand-logo {
+  width: 140px; /* Ganti angka ini jika logo terlalu besar/kecil */
+  height: auto;
+  object-fit: contain;
+  margin-bottom: 4px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.85rem;
+  background-color: #dbeafe;
+  color: #1d4ed8;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+/* Card Viewer Area - Modern Soft Shadow */
+.viewer-card {
+  width: 100%;
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.image-wrapper {
+  width: 100%;
+}
+
+.image-wrapper img {
+  width: 100%;
+  height: auto;
+  max-height: 65vh;
+  object-fit: contain;
+  display: block;
+  border-radius: 12px; /* Foto ikut memiliki sudut melengkung */
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Status Loading / Error */
+.state-box {
+  text-align: center;
+  padding: 40px 20px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 4px solid #e2e8f0;
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s ease-in-out infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Area Tombol Sosial Media */
+.social-links {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.btn-social {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 16px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  color: #ffffff;
+  transition: all 0.2s ease;
+  border: border-box;
+}
+
+.btn-social:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+}
+
+.btn-social:active {
+  transform: translateY(0);
+}
+
+.btn-social svg {
+  width: 22px;
+  height: 22px;
+}
+
+/* Warna Gradient & Solid Modern */
+.btn-instagram { 
+  background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); 
+}
+
+.btn-whatsapp { 
+  background-color: #25D366; 
+  color: #ffffff;
+}
+
+.btn-tiktok { 
+  background-color: #000000; 
+}
+
+/* Footer */
+.footer {
+  margin-top: 32px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.footer .copyright {
+  margin-top: 4px;
+  color: #cbd5e1;
+}
