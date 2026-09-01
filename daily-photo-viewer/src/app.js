@@ -5,10 +5,10 @@ const CONFIG = {
 
 // Database Angka Gizi Default (4 Porsi + Serat)
 let currentNutrition = {
-  balita: { kalori: '452,6 kkal', protein: '15,8 g', karbo: '62,8 g', lemak: '15,6 g', serat: '0,5 g' },
-  kecil:  { kalori: '452,6 kkal', protein: '15,8 g', karbo: '62,8 g', lemak: '15,6 g', serat: '0,5 g' },
-  besar:  { kalori: '637,9 kkal', protein: '23,7 g', karbo: '83,4 g', lemak: '23,4 g', serat: '0,8 g' },
-  bumil:  { kalori: '804,9 kkal', protein: '31,5 g', karbo: '103,9 g', lemak: '28,9 g', serat: '0,9 g' }
+  balita: { kalori: '556,5 kkal', protein: '21,8 g', karbo: '62,9 g', lemak: '24 g', serat: '4,7 g' },
+  kecil:  { kalori: '556,5 kkal', protein: '21,8 g', karbo: '62,9 g', lemak: '24 g', serat: '4,7 g' },
+  besar:  { kalori: '695,4 kkal', protein: '27,5 g', karbo: '85,5 g', lemak: '26,9 g', serat: '5 g' },
+  bumil:  { kalori: '862,4 kkal', protein: '35,3 g', karbo: '105,9 g', lemak: '32,4 g', serat: '5,1 g' }
 };
 
 async function fetchLatestPhoto() {
@@ -50,7 +50,8 @@ async function fetchLatestPhoto() {
         if (errorEl) errorEl.classList.add('hidden');
         if (imgContainer) imgContainer.classList.remove('hidden');
 
-        runOCRProcessing(photoImg);
+        // Jalankan OCR Cloud Vision API
+        runGoogleVisionOCR(directImageUrl);
       };
 
       photoImg.onerror = () => {
@@ -79,47 +80,67 @@ async function fetchLatestPhoto() {
   }
 }
 
-// 🔍 PEMINDAIAN TEKS OCR
-async function runOCRProcessing(imageElement) {
+// 🔍 PEMINDAIAN MENGGUNAKAN GOOGLE CLOUD VISION API (DOCUMENT_TEXT_DETECTION)
+async function runGoogleVisionOCR(imageUrl) {
   const menuTitleEl = document.getElementById('menu-title');
   const originalTitle = menuTitleEl ? menuTitleEl.textContent : '';
 
   try {
-    if (menuTitleEl) menuTitleEl.textContent = '🔍 Memindai teks gizi dari poster...';
+    if (menuTitleEl) menuTitleEl.textContent = '🔍 Memindai poster dengan Google Vision AI...';
 
-    const worker = await Tesseract.createWorker('ind');
-    const result = await worker.recognize(imageElement);
-    await worker.terminate();
+    const visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${CONFIG.API_KEY}`;
+    
+    const requestBody = {
+      requests: [
+        {
+          image: { source: { imageUri: imageUrl } },
+          features: [ { type: "DOCUMENT_TEXT_DETECTION" } ] // Khusus dokumen/tabel
+        }
+      ]
+    };
 
-    const extractedText = result.data.text;
-    console.log("--- TEKS POSTER TERSEDIA ---");
-    console.log(extractedText);
+    const res = await fetch(visionApiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    });
 
-    parsePosterOCR(extractedText);
+    const visionData = await res.json();
+    
+    if (visionData.responses && visionData.responses[0]?.fullTextAnnotation) {
+      const extractedText = visionData.responses[0].fullTextAnnotation.text;
+      console.log("--- TEKS HASIL GOOGLE VISION API ---");
+      console.log(extractedText);
+
+      parseVisionOCRText(extractedText);
+    }
 
     if (menuTitleEl) menuTitleEl.textContent = originalTitle;
 
-  } catch (ocrError) {
-    console.warn("OCR Error/Skipped:", ocrError);
+  } catch (err) {
+    console.warn("Google Vision API Error/Fallback:", err);
     if (menuTitleEl) menuTitleEl.textContent = originalTitle;
   }
 }
 
-// 🧪 PARSER MATRIKS TABEL POSTER
-function parsePosterOCR(text) {
+// 🧪 PARSER TABEL POSTER DENGAN PEMBERSIHAN HURUF 'g' SAMAR
+function parseVisionOCRText(text) {
   const lines = text.split('\n');
 
   lines.forEach(line => {
-    // Cari baris porsi dan ekstrak deretan angkanya (misal: 452,6 kkal 15,8 g 15,6 g 62,8 g 0,5 g)
-    const numbers = line.match(/(\d+[\.,]?\d*)/g);
+    // 1. Bersihkan huruf 'g' yang keliru dibaca angka '9' di akhir angka (misal: "21,8 9" -> "21,8 g")
+    let cleanedLine = line.replace(/(\d+[\.,]?\d*)\s*9\b/g, '$1 g');
 
-    if (numbers && numbers.length >= 4) {
+    // 2. Ekstraksi deretan angka desimal
+    const numbers = cleanedLine.match(/(\d+[\.,]\d+|\d+)/g);
+
+    if (numbers && numbers.length >= 5) {
       const porsiData = {
         kalori: `${numbers[0]} kkal`,
         protein: `${numbers[1]} g`,
         lemak: `${numbers[2]} g`,
         karbo: `${numbers[3]} g`,
-        serat: numbers[4] ? `${numbers[4]} g` : '-'
+        serat: `${numbers[4]} g`
       };
 
       if (/kecil/i.test(line)) {
