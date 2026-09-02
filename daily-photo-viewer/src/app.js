@@ -1,14 +1,15 @@
 const CONFIG = {
-  API_KEY: 'AIzaSyD-OT81VKp_MvfXZsW0lPyMyGLWSnqAVxA',
-  FOLDER_ID: '1A7S0gcPylw5F2V9OrtVsUn8gxBoKtQxM'
+  DRIVE_API_KEY: 'AIzaSyD-OT81VKp_MvfXZsW0lPyMyGLWSnqAVxA',
+  FOLDER_ID: '1A7S0gcPylw5F2V9OrtVsUn8gxBoKtQxM',
+  GEMINI_API_KEY: 'AQ.Ab8RN6IJipjRcqMkL77seSDSr1SrHnwD97nkFj0ozHwa_A-jxQ' // <-- Masukkan API Key Gemini di sini
 };
 
-// Database Angka Gizi Default (4 Porsi + Serat)
+// Database Angka Gizi Default
 let currentNutrition = {
-  balita: { kalori: '556,5 kkal', protein: '21,8 g', karbo: '62,9 g', lemak: '24 g', serat: '4,7 g' },
-  kecil:  { kalori: '556,5 kkal', protein: '21,8 g', karbo: '62,9 g', lemak: '24 g', serat: '4,7 g' },
-  besar:  { kalori: '695,4 kkal', protein: '27,5 g', karbo: '85,5 g', lemak: '26,9 g', serat: '5 g' },
-  bumil:  { kalori: '862,4 kkal', protein: '35,3 g', karbo: '105,9 g', lemak: '32,4 g', serat: '5,1 g' }
+  balita: { kalori: '439,3 kkal', protein: '23,3 g', karbo: '64 g', lemak: '9,8 g', serat: '1,6 g' },
+  kecil:  { kalori: '439,3 kkal', protein: '23,3 g', karbo: '64 g', lemak: '9,8 g', serat: '1,6 g' },
+  besar:  { kalori: '606,5 kkal', protein: '27,8 g', karbo: '85,1 g', lemak: '17,1 g', serat: '1,8 g' },
+  bumil:  { kalori: '773,5 kkal', protein: '35,5 g', karbo: '105,5 g', lemak: '22,5 g', serat: '1,9 g' }
 };
 
 async function fetchLatestPhoto() {
@@ -20,7 +21,7 @@ async function fetchLatestPhoto() {
   const photoDate = document.getElementById('photo-date');
 
   const query = encodeURIComponent(`'${CONFIG.FOLDER_ID}' in parents and mimeType contains 'image/' and trashed = false`);
-  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&orderBy=createdTime desc&pageSize=1&fields=files(id,name,createdTime)&key=${CONFIG.API_KEY}`;
+  const url = `https://www.googleapis.com/drive/v3/files?q=${query}&orderBy=createdTime desc&pageSize=1&fields=files(id,name,createdTime)&key=${CONFIG.DRIVE_API_KEY}`;
 
   try {
     const response = await fetch(url);
@@ -42,7 +43,7 @@ async function fetchLatestPhoto() {
         })}`;
       }
 
-      const directImageUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${CONFIG.API_KEY}`;
+      const directImageUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${CONFIG.DRIVE_API_KEY}`;
       const fallbackUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
 
       photoImg.onload = () => {
@@ -50,8 +51,8 @@ async function fetchLatestPhoto() {
         if (errorEl) errorEl.classList.add('hidden');
         if (imgContainer) imgContainer.classList.remove('hidden');
 
-        // Panggil OCR dengan melewatkan elemen gambar yang sudah ter-load
-        runGoogleVisionOCR(photoImg);
+        // Panggil Gemini AI untuk mengekstrak data dari gambar
+        runGeminiVisionAI(photoImg);
       };
 
       photoImg.onerror = () => {
@@ -80,147 +81,89 @@ async function fetchLatestPhoto() {
   }
 }
 
-// 📸 FUNGSI KONVERSI GAMBAR KE BASE64
+// 📸 HELPER KONVERSI GAMBAR KE BASE64
 function getBase64Image(imgEl) {
   const canvas = document.createElement('canvas');
   canvas.width = imgEl.naturalWidth || imgEl.width;
   canvas.height = imgEl.naturalHeight || imgEl.height;
-  const ctx = canvas.getContext('2d'); // <-- SUDAH DIPERBAIKI MENJADI '2d'
+  const ctx = canvas.getContext('2d');
   ctx.drawImage(imgEl, 0, 0);
   const dataURL = canvas.toDataURL('image/jpeg');
   return dataURL.replace(/^data:image\/(png|jpg|jpeg);base64,/, '');
 }
 
-// 🔍 PEMINDAIAN OCR GOOGLE VISION API
-async function runGoogleVisionOCR(imgElement) {
+// 🤖 PROSES PEMBACAAN DENGAN GEMINI AI
+async function runGeminiVisionAI(imgElement) {
   const menuTitleEl = document.getElementById('menu-title');
   const originalTitle = menuTitleEl ? menuTitleEl.textContent : '';
 
   try {
-    if (menuTitleEl) menuTitleEl.textContent = '🔍 Memindai poster dengan Google Vision AI...';
+    if (menuTitleEl) menuTitleEl.textContent = '🤖 Gemini AI sedang membaca data gizi dari poster...';
 
-    // Ubah gambar menjadi Base64 agar dikirim langsung tanpa masalah URL/Autentikasi
-    const base64Content = getBase64Image(imgElement);
+    const base64Data = getBase64Image(imgElement);
 
-    const visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${CONFIG.API_KEY}`;
-    
+    // Prompt khusus agar Gemini mengembalikan JSON murni
+    const promptText = `
+    Analisis tabel gizi pada poster ini. Ekstrak data gizi untuk 4 kategori porsi: "kecil", "besar", "balita", dan "bumil" (Bumil & Busui).
+    Berikan output HANYA dalam format JSON valid tanpa teks atau markdown tambahan seperti ini:
+    {
+      "kecil": {"kalori": "439,3 kkal", "protein": "23,3 g", "lemak": "9,8 g", "karbo": "64 g", "serat": "1,6 g"},
+      "besar": {"kalori": "606,5 kkal", "protein": "27,8 g", "lemak": "17,1 g", "karbo": "85,1 g", "serat": "1,8 g"},
+      "balita": {"kalori": "439,3 kkal", "protein": "23,3 g", "lemak": "9,8 g", "karbo": "64 g", "serat": "1,6 g"},
+      "bumil": {"kalori": "773,5 kkal", "protein": "35,5 g", "lemak": "22,5 g", "karbo": "105,5 g", "serat": "1,9 g"}
+    }
+    `;
+
+    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+
     const requestBody = {
-      requests: [
+      contents: [
         {
-          image: { content: base64Content },
-          features: [ { type: "DOCUMENT_TEXT_DETECTION" } ]
+          parts: [
+            { text: promptText },
+            {
+              inline_data: {
+                mime_type: "image/jpeg",
+                data: base64Data
+              }
+            }
+          ]
         }
       ]
     };
 
-    const res = await fetch(visionApiUrl, {
+    const res = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody)
     });
 
-    const visionData = await res.json();
-    
-    if (visionData.responses && visionData.responses[0]?.fullTextAnnotation) {
-      const extractedText = visionData.responses[0].fullTextAnnotation.text;
-      console.log("--- TEKS HASIL GOOGLE VISION API ---");
-      console.log(extractedText);
+    const result = await res.json();
 
-      parseVisionOCRText(extractedText);
-    } else if (visionData.error) {
-      console.error("Google Vision API Error Detail:", visionData.error);
+    if (result.candidates && result.candidates[0].content.parts[0].text) {
+      let rawText = result.candidates[0].content.parts[0].text;
+      console.log("--- RAW GEMINI AI RESPONSE ---", rawText);
+
+      // Bersihkan karakter markdown ```json jika ada
+      rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+      const parsedJSON = JSON.parse(rawText);
+      currentNutrition = { ...currentNutrition, ...parsedJSON };
+
+      console.log("--- HASIL PARSE GEMINI AI ---", currentNutrition);
     }
 
     if (menuTitleEl) menuTitleEl.textContent = originalTitle;
 
+    // Refresh Tampilan UI
+    const activeBtn = document.querySelector('.btn-porsi.active');
+    const porsiType = activeBtn ? activeBtn.getAttribute('data-porsi') : 'kecil';
+    applyNutritionToUI(porsiType);
+
   } catch (err) {
-    console.warn("Google Vision API Error/Fallback:", err);
+    console.warn("Gemini AI Error/Fallback:", err);
     if (menuTitleEl) menuTitleEl.textContent = originalTitle;
   }
-}
-
-// 🧪 PARSER TABEL POSTER (BERBASIS URUTAN DAN MATRIKS ANGKA)
-function parseVisionOCRText(text) {
-  // 1. Bersihkan huruf 'g' atau '9' samar di ujung angka
-  let cleanedText = text.replace(/(\d+[\.,]?\d*)\s*[g9]\b/gi, '$1');
-
-  // 2. Ambil semua deretan angka (termasuk desimal berkoma/titik)
-  const allNumbers = cleanedText.match(/(\d+[\.,]\d+|\d+)/g);
-
-  // Filter angka yang relevan (mengabaikan angka jumlah penerima manfaat seperti 2763 / 2719)
-  const nutritionNumbers = allNumbers ? allNumbers.filter(n => {
-    const num = parseFloat(n.replace(',', '.'));
-    return num > 0 && num < 2000 && num !== 2763 && num !== 2719; 
-  }) : [];
-
-  console.log("--- ANGKA TERDETEKSI ---", nutritionNumbers);
-
-  // Jika terdeteksi minimal 20 angka (4 porsi x 5 zat gizi)
-  if (nutritionNumbers.length >= 20) {
-    const startIndex = nutritionNumbers.findIndex(n => {
-      const val = parseFloat(n.replace(',', '.'));
-      return val > 300 && val < 1000;
-    });
-
-    const offset = startIndex !== -1 ? startIndex : 0;
-
-    currentNutrition.kecil = {
-      kalori: `${nutritionNumbers[offset + 0]} kkal`,
-      protein: `${nutritionNumbers[offset + 1]} g`,
-      lemak: `${nutritionNumbers[offset + 2]} g`,
-      karbo: `${nutritionNumbers[offset + 3]} g`,
-      serat: `${nutritionNumbers[offset + 4]} g`
-    };
-
-    currentNutrition.besar = {
-      kalori: `${nutritionNumbers[offset + 5]} kkal`,
-      protein: `${nutritionNumbers[offset + 6]} g`,
-      lemak: `${nutritionNumbers[offset + 7]} g`,
-      karbo: `${nutritionNumbers[offset + 8]} g`,
-      serat: `${nutritionNumbers[offset + 9]} g`
-    };
-
-    currentNutrition.balita = {
-      kalori: `${nutritionNumbers[offset + 10]} kkal`,
-      protein: `${nutritionNumbers[offset + 11]} g`,
-      lemak: `${nutritionNumbers[offset + 12]} g`,
-      karbo: `${nutritionNumbers[offset + 13]} g`,
-      serat: `${nutritionNumbers[offset + 14]} g`
-    };
-
-    currentNutrition.bumil = {
-      kalori: `${nutritionNumbers[offset + 15]} kkal`,
-      protein: `${nutritionNumbers[offset + 16]} g`,
-      lemak: `${nutritionNumbers[offset + 17]} g`,
-      karbo: `${nutritionNumbers[offset + 18]} g`,
-      serat: `${nutritionNumbers[offset + 19]} g`
-    };
-  } else {
-    // Fallback: Pemindaian berbasis baris biasa jika format angka tidak genap 20
-    const lines = text.split('\n');
-    lines.forEach(line => {
-      const nums = line.match(/(\d+[\.,]\d+|\d+)/g);
-      if (nums && nums.length >= 5) {
-        const porsiData = {
-          kalori: `${nums[0]} kkal`,
-          protein: `${nums[1]} g`,
-          lemak: `${nums[2]} g`,
-          karbo: `${nums[3]} g`,
-          serat: `${nums[4]} g`
-        };
-
-        if (/kecil/i.test(line)) currentNutrition.kecil = porsiData;
-        else if (/besar/i.test(line)) currentNutrition.besar = porsiData;
-        else if (/balita/i.test(line)) currentNutrition.balita = porsiData;
-        else if (/bumil|busui/i.test(line)) currentNutrition.bumil = porsiData;
-      }
-    });
-  }
-
-  // Render ulang UI
-  const activeBtn = document.querySelector('.btn-porsi.active');
-  const porsiType = activeBtn ? activeBtn.getAttribute('data-porsi') : 'kecil';
-  applyNutritionToUI(porsiType);
 }
 
 function applyNutritionToUI(porsiType) {
