@@ -85,7 +85,7 @@ function getBase64Image(imgEl) {
   const canvas = document.createElement('canvas');
   canvas.width = imgEl.naturalWidth || imgEl.width;
   canvas.height = imgEl.naturalHeight || imgEl.height;
-  const ctx = canvas.getContext('canvas');
+  const ctx = canvas.getContext('2d'); // <-- SUDAH DIPERBAIKI MENJADI '2d'
   ctx.drawImage(imgEl, 0, 0);
   const dataURL = canvas.toDataURL('image/jpeg');
   return dataURL.replace(/^data:image\/(png|jpg|jpeg);base64,/, '');
