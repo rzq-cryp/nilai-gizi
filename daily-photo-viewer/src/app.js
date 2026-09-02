@@ -123,38 +123,90 @@ async function runGoogleVisionOCR(imageUrl) {
   }
 }
 
-// 🧪 PARSER TABEL POSTER DENGAN PEMBERSIHAN HURUF 'g' SAMAR
+// 🧪 PARSER TABEL POSTER (MATRIKS URUTAN BLOK TEKS)
 function parseVisionOCRText(text) {
-  const lines = text.split('\n');
+  console.log("--- RAW OCR TEXT ---", text);
 
-  lines.forEach(line => {
-    // 1. Bersihkan huruf 'g' yang keliru dibaca angka '9' di akhir angka (misal: "21,8 9" -> "21,8 g")
-    let cleanedLine = line.replace(/(\d+[\.,]?\d*)\s*9\b/g, '$1 g');
+  // 1. Bersihkan huruf 'g' atau '9' samar di ujung angka
+  let cleanedText = text.replace(/(\d+[\.,]?\d*)\s*[g9]\b/gi, '$1');
 
-    // 2. Ekstraksi deretan angka desimal
-    const numbers = cleanedLine.match(/(\d+[\.,]\d+|\d+)/g);
+  // 2. Ambil semua deretan angka (termasuk desimal berkoma/titik)
+  // Menangkap angka seperti: 439,3 | 23,3 | 9,8 | 64 | 1,6 dll.
+  const allNumbers = cleanedText.match(/(\d+[\.,]\d+|\d+)/g);
 
-    if (numbers && numbers.length >= 5) {
-      const porsiData = {
-        kalori: `${numbers[0]} kkal`,
-        protein: `${numbers[1]} g`,
-        lemak: `${numbers[2]} g`,
-        karbo: `${numbers[3]} g`,
-        serat: `${numbers[4]} g`
-      };
+  // Filter angka yang relevan (mengabaikan angka jumlah penerima manfaat seperti 2763 jika ikut terambil)
+  const nutritionNumbers = allNumbers ? allNumbers.filter(n => {
+    const num = parseFloat(n.replace(',', '.'));
+    return num > 0 && num < 2000 && num !== 2763; 
+  }) : [];
 
-      if (/kecil/i.test(line)) {
-        currentNutrition.kecil = porsiData;
-      } else if (/besar/i.test(line)) {
-        currentNutrition.besar = porsiData;
-      } else if (/balita/i.test(line)) {
-        currentNutrition.balita = porsiData;
-      } else if (/bumil|busui/i.test(line)) {
-        currentNutrition.bumil = porsiData;
+  console.log("--- ANGKA TERDETEKSI ---", nutritionNumbers);
+
+  // Jika terdeteksi minimal 20 angka (4 porsi x 5 zat gizi)
+  if (nutritionNumbers.length >= 20) {
+    // Cari index awal angka kalori porsi kecil pertama (sekitar 400-900)
+    const startIndex = nutritionNumbers.findIndex(n => {
+      const val = parseFloat(n.replace(',', '.'));
+      return val > 300 && val < 1000;
+    });
+
+    const offset = startIndex !== -1 ? startIndex : 0;
+
+    // Matriks 4 Porsi x 5 Kolom (Energi, Protein, Lemak, Karbo, Serat)
+    currentNutrition.kecil = {
+      kalori: `${nutritionNumbers[offset + 0]} kkal`,
+      protein: `${nutritionNumbers[offset + 1]} g`,
+      lemak: `${nutritionNumbers[offset + 2]} g`,
+      karbo: `${nutritionNumbers[offset + 3]} g`,
+      serat: `${nutritionNumbers[offset + 4]} g`
+    };
+
+    currentNutrition.besar = {
+      kalori: `${nutritionNumbers[offset + 5]} kkal`,
+      protein: `${nutritionNumbers[offset + 6]} g`,
+      lemak: `${nutritionNumbers[offset + 7]} g`,
+      karbo: `${nutritionNumbers[offset + 8]} g`,
+      serat: `${nutritionNumbers[offset + 9]} g`
+    };
+
+    currentNutrition.balita = {
+      kalori: `${nutritionNumbers[offset + 10]} kkal`,
+      protein: `${nutritionNumbers[offset + 11]} g`,
+      lemak: `${nutritionNumbers[offset + 12]} g`,
+      karbo: `${nutritionNumbers[offset + 13]} g`,
+      serat: `${nutritionNumbers[offset + 14]} g`
+    };
+
+    currentNutrition.bumil = {
+      kalori: `${nutritionNumbers[offset + 15]} kkal`,
+      protein: `${nutritionNumbers[offset + 16]} g`,
+      lemak: `${nutritionNumbers[offset + 17]} g`,
+      karbo: `${nutritionNumbers[offset + 18]} g`,
+      serat: `${nutritionNumbers[offset + 19]} g`
+    };
+  } else {
+    // Fallback: Pemindaian berbasis baris biasa jika format angka tidak genap 20
+    const lines = text.split('\n');
+    lines.forEach(line => {
+      const nums = line.match(/(\d+[\.,]\d+|\d+)/g);
+      if (nums && nums.length >= 5) {
+        const porsiData = {
+          kalori: `${nums[0]} kkal`,
+          protein: `${nums[1]} g`,
+          lemak: `${nums[2]} g`,
+          karbo: `${nums[3]} g`,
+          serat: `${nums[4]} g`
+        };
+
+        if (/kecil/i.test(line)) currentNutrition.kecil = porsiData;
+        else if (/besar/i.test(line)) currentNutrition.besar = porsiData;
+        else if (/balita/i.test(line)) currentNutrition.balita = porsiData;
+        else if (/bumil|busui/i.test(line)) currentNutrition.bumil = porsiData;
       }
-    }
-  });
+    });
+  }
 
+  // Render ulang UI
   const activeBtn = document.querySelector('.btn-porsi.active');
   const porsiType = activeBtn ? activeBtn.getAttribute('data-porsi') : 'kecil';
   applyNutritionToUI(porsiType);
