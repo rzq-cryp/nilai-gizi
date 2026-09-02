@@ -50,8 +50,8 @@ async function fetchLatestPhoto() {
         if (errorEl) errorEl.classList.add('hidden');
         if (imgContainer) imgContainer.classList.remove('hidden');
 
-        // Jalankan OCR Cloud Vision API
-        runGoogleVisionOCR(directImageUrl);
+        // Panggil OCR dengan melewatkan elemen gambar yang sudah ter-load
+        runGoogleVisionOCR(photoImg);
       };
 
       photoImg.onerror = () => {
@@ -80,21 +80,35 @@ async function fetchLatestPhoto() {
   }
 }
 
-// 🔍 PEMINDAIAN MENGGUNAKAN GOOGLE CLOUD VISION API (DOCUMENT_TEXT_DETECTION)
-async function runGoogleVisionOCR(imageUrl) {
+// 📸 FUNGSI KONVERSI GAMBAR KE BASE64
+function getBase64Image(imgEl) {
+  const canvas = document.createElement('canvas');
+  canvas.width = imgEl.naturalWidth || imgEl.width;
+  canvas.height = imgEl.naturalHeight || imgEl.height;
+  const ctx = canvas.getContext('canvas');
+  ctx.drawImage(imgEl, 0, 0);
+  const dataURL = canvas.toDataURL('image/jpeg');
+  return dataURL.replace(/^data:image\/(png|jpg|jpeg);base64,/, '');
+}
+
+// 🔍 PEMINDAIAN OCR GOOGLE VISION API
+async function runGoogleVisionOCR(imgElement) {
   const menuTitleEl = document.getElementById('menu-title');
   const originalTitle = menuTitleEl ? menuTitleEl.textContent : '';
 
   try {
     if (menuTitleEl) menuTitleEl.textContent = '🔍 Memindai poster dengan Google Vision AI...';
 
+    // Ubah gambar menjadi Base64 agar dikirim langsung tanpa masalah URL/Autentikasi
+    const base64Content = getBase64Image(imgElement);
+
     const visionApiUrl = `https://vision.googleapis.com/v1/images:annotate?key=${CONFIG.API_KEY}`;
     
     const requestBody = {
       requests: [
         {
-          image: { source: { imageUri: imageUrl } },
-          features: [ { type: "DOCUMENT_TEXT_DETECTION" } ] // Khusus dokumen/tabel
+          image: { content: base64Content },
+          features: [ { type: "DOCUMENT_TEXT_DETECTION" } ]
         }
       ]
     };
@@ -113,6 +127,8 @@ async function runGoogleVisionOCR(imageUrl) {
       console.log(extractedText);
 
       parseVisionOCRText(extractedText);
+    } else if (visionData.error) {
+      console.error("Google Vision API Error Detail:", visionData.error);
     }
 
     if (menuTitleEl) menuTitleEl.textContent = originalTitle;
@@ -123,28 +139,24 @@ async function runGoogleVisionOCR(imageUrl) {
   }
 }
 
-// 🧪 PARSER TABEL POSTER (MATRIKS URUTAN BLOK TEKS)
+// 🧪 PARSER TABEL POSTER (BERBASIS URUTAN DAN MATRIKS ANGKA)
 function parseVisionOCRText(text) {
-  console.log("--- RAW OCR TEXT ---", text);
-
   // 1. Bersihkan huruf 'g' atau '9' samar di ujung angka
   let cleanedText = text.replace(/(\d+[\.,]?\d*)\s*[g9]\b/gi, '$1');
 
   // 2. Ambil semua deretan angka (termasuk desimal berkoma/titik)
-  // Menangkap angka seperti: 439,3 | 23,3 | 9,8 | 64 | 1,6 dll.
   const allNumbers = cleanedText.match(/(\d+[\.,]\d+|\d+)/g);
 
-  // Filter angka yang relevan (mengabaikan angka jumlah penerima manfaat seperti 2763 jika ikut terambil)
+  // Filter angka yang relevan (mengabaikan angka jumlah penerima manfaat seperti 2763 / 2719)
   const nutritionNumbers = allNumbers ? allNumbers.filter(n => {
     const num = parseFloat(n.replace(',', '.'));
-    return num > 0 && num < 2000 && num !== 2763; 
+    return num > 0 && num < 2000 && num !== 2763 && num !== 2719; 
   }) : [];
 
   console.log("--- ANGKA TERDETEKSI ---", nutritionNumbers);
 
   // Jika terdeteksi minimal 20 angka (4 porsi x 5 zat gizi)
   if (nutritionNumbers.length >= 20) {
-    // Cari index awal angka kalori porsi kecil pertama (sekitar 400-900)
     const startIndex = nutritionNumbers.findIndex(n => {
       const val = parseFloat(n.replace(',', '.'));
       return val > 300 && val < 1000;
@@ -152,7 +164,6 @@ function parseVisionOCRText(text) {
 
     const offset = startIndex !== -1 ? startIndex : 0;
 
-    // Matriks 4 Porsi x 5 Kolom (Energi, Protein, Lemak, Karbo, Serat)
     currentNutrition.kecil = {
       kalori: `${nutritionNumbers[offset + 0]} kkal`,
       protein: `${nutritionNumbers[offset + 1]} g`,
