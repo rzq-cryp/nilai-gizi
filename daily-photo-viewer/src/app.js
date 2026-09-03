@@ -20,6 +20,15 @@ async function fetchLatestPhoto() {
   const photoImg = document.getElementById('photo-display');
   const photoDate = document.getElementById('photo-date');
 
+  // Pengecekan awal ketersediaan API Key
+  if (!CONFIG.DRIVE_API_KEY || !CONFIG.GEMINI_API_KEY) {
+    if (loadingEl) loadingEl.classList.add('hidden');
+    if (errorMsg) errorMsg.textContent = 'API Key belum dikonfigurasi. Periksa file .env lokal atau Environment Variables Vercel.';
+    if (errorEl) errorEl.classList.remove('hidden');
+    console.error('Environment variables missing:', CONFIG);
+    return;
+  }
+
   const query = encodeURIComponent(`'${CONFIG.FOLDER_ID}' in parents and mimeType contains 'image/' and trashed = false`);
   const url = `https://www.googleapis.com/drive/v3/files?q=${query}&orderBy=createdTime desc&pageSize=1&fields=files(id,name,createdTime)&key=${CONFIG.DRIVE_API_KEY}`;
 
@@ -43,15 +52,15 @@ async function fetchLatestPhoto() {
         })}`;
       }
 
-      const directImageUrl = `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&key=${CONFIG.DRIVE_API_KEY}`;
-      const fallbackUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+      // URL foto langsung dan fallback Googleusercontent
+      const directImageUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
 
       photoImg.onload = () => {
         if (loadingEl) loadingEl.classList.add('hidden');
         if (errorEl) errorEl.classList.add('hidden');
         if (imgContainer) imgContainer.classList.remove('hidden');
 
-        // ⚡ CEK KETERSEDIAAN CACHE DI LOCALSTORAGE
+        // Cek localStorage
         const cacheKey = `nutrition_data_${fileId}`;
         const cachedData = localStorage.getItem(cacheKey);
 
@@ -63,19 +72,14 @@ async function fetchLatestPhoto() {
           const porsiType = activeBtn ? activeBtn.getAttribute('data-porsi') : 'kecil';
           applyNutritionToUI(porsiType);
         } else {
-          // Jika belum ada di localStorage, baru panggil Gemini AI
           runGeminiVisionAI(photoImg, fileId);
         }
       };
 
       photoImg.onerror = () => {
-        if (photoImg.src !== fallbackUrl) {
-          photoImg.src = fallbackUrl;
-        } else {
-          if (loadingEl) loadingEl.classList.add('hidden');
-          if (errorMsg) errorMsg.textContent = 'Gagal memuat file gambar.';
-          if (errorEl) errorEl.classList.remove('hidden');
-        }
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (errorMsg) errorMsg.textContent = 'Gagal memuat file gambar dari Google Drive.';
+        if (errorEl) errorEl.classList.remove('hidden');
       };
 
       photoImg.crossOrigin = 'Anonymous';
@@ -105,7 +109,7 @@ function getBase64Image(imgEl) {
   return dataURL.replace(/^data:image\/(png|jpg|jpeg);base64,/, '');
 }
 
-// 🤖 PROSES PEMBACAAN AKURAT DENGAN GEMINI AI
+// 🤖 PROSES PEMBACAAN DENGAN GEMINI AI
 async function runGeminiVisionAI(imgElement, fileId) {
   const menuTitleEl = document.getElementById('menu-title');
   const originalTitle = menuTitleEl ? menuTitleEl.textContent : '';
@@ -153,7 +157,6 @@ async function runGeminiVisionAI(imgElement, fileId) {
           ]
         }
       ],
-      // 🎯 KONFIGURASI AGAR HASIL PRESISI DAN JSON MURNI
       generationConfig: {
         temperature: 0,
         response_mime_type: "application/json"
@@ -168,6 +171,10 @@ async function runGeminiVisionAI(imgElement, fileId) {
 
     const result = await res.json();
 
+    if (result.error) {
+      throw new Error(result.error.message || 'Gemini API Error');
+    }
+
     if (result.candidates && result.candidates[0].content.parts[0].text) {
       let rawText = result.candidates[0].content.parts[0].text.trim();
       console.log("--- HASIL EKSTRAKSI GEMINI AI ---", rawText);
@@ -175,17 +182,14 @@ async function runGeminiVisionAI(imgElement, fileId) {
       const parsedJSON = JSON.parse(rawText);
       currentNutrition = { ...currentNutrition, ...parsedJSON };
 
-      // 💾 SIMPAN HASIL KE LOCALSTORAGE
       if (fileId) {
         const cacheKey = `nutrition_data_${fileId}`;
         localStorage.setItem(cacheKey, JSON.stringify(currentNutrition));
-        console.log(`💾 Data gizi foto ${fileId} berhasil disimpan ke localStorage!`);
       }
     }
 
     if (menuTitleEl) menuTitleEl.textContent = originalTitle;
 
-    // Refresh Tampilan UI
     const activeBtn = document.querySelector('.btn-porsi.active');
     const porsiType = activeBtn ? activeBtn.getAttribute('data-porsi') : 'kecil';
     applyNutritionToUI(porsiType);
