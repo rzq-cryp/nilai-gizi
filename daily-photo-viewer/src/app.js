@@ -1,7 +1,7 @@
 const CONFIG = {
-  DRIVE_API_KEY: 'AIzaSyD-OT81VKp_MvfXZsW0lPyMyGLWSnqAVxA',
-  FOLDER_ID: '1A7S0gcPylw5F2V9OrtVsUn8gxBoKtQxM',
-  GEMINI_API_KEY: 'AQ.Ab8RN6IJipjRcqMkL77seSDSr1SrHnwD97nkFj0ozHwa_A-jxQ' // <-- Masukkan API Key Gemini di sini
+  DRIVE_API_KEY: import.meta.env.VITE_DRIVE_API_KEY,
+  FOLDER_ID: import.meta.env.VITE_FOLDER_ID,
+  GEMINI_API_KEY: import.meta.env.VITE_GEMINI_API_KEY,
 };
 
 // Database Angka Gizi Default
@@ -51,8 +51,21 @@ async function fetchLatestPhoto() {
         if (errorEl) errorEl.classList.add('hidden');
         if (imgContainer) imgContainer.classList.remove('hidden');
 
-        // Panggil Gemini AI untuk mengekstrak data dari gambar
-        runGeminiVisionAI(photoImg);
+        // ⚡ CEK KETERSEDIAAN CACHE DI LOCALSTORAGE
+        const cacheKey = `nutrition_data_${fileId}`;
+        const cachedData = localStorage.getItem(cacheKey);
+
+        if (cachedData) {
+          console.log("⚡ Data gizi dimuat langsung dari localStorage!");
+          currentNutrition = JSON.parse(cachedData);
+          
+          const activeBtn = document.querySelector('.btn-porsi.active');
+          const porsiType = activeBtn ? activeBtn.getAttribute('data-porsi') : 'kecil';
+          applyNutritionToUI(porsiType);
+        } else {
+          // Jika belum ada di localStorage, baru panggil Gemini AI
+          runGeminiVisionAI(photoImg, fileId);
+        }
       };
 
       photoImg.onerror = () => {
@@ -92,25 +105,35 @@ function getBase64Image(imgEl) {
   return dataURL.replace(/^data:image\/(png|jpg|jpeg);base64,/, '');
 }
 
-// 🤖 PROSES PEMBACAAN DENGAN GEMINI AI
-async function runGeminiVisionAI(imgElement) {
+// 🤖 PROSES PEMBACAAN AKURAT DENGAN GEMINI AI
+async function runGeminiVisionAI(imgElement, fileId) {
   const menuTitleEl = document.getElementById('menu-title');
   const originalTitle = menuTitleEl ? menuTitleEl.textContent : '';
 
   try {
-    if (menuTitleEl) menuTitleEl.textContent = '🤖 Gemini AI sedang membaca data gizi dari poster...';
+    if (menuTitleEl) menuTitleEl.textContent = '🤖 Gemini AI sedang menganalisis tabel gizi...';
 
     const base64Data = getBase64Image(imgElement);
 
-    // Prompt khusus agar Gemini mengembalikan JSON murni
     const promptText = `
-    Analisis tabel gizi pada poster ini. Ekstrak data gizi untuk 4 kategori porsi: "kecil", "besar", "balita", dan "bumil" (Bumil & Busui).
-    Berikan output HANYA dalam format JSON valid tanpa teks atau markdown tambahan seperti ini:
+    Anda adalah sistem ekstraksi OCR data presisi tinggi. 
+    Tugas: Analisis tabel gizi pada gambar poster ini dengan sangat teliti.
+
+    ATURAN EKSTRAKSI:
+    1. Ekstrak data gizi persis sesuai angka yang tertera pada tabel poster (Energi/Kalori, Protein, Lemak, Karbohidrat, Serat).
+    2. Kategori Porsi:
+       - "kecil": Porsi Kecil
+       - "besar": Porsi Besar
+       - "balita": Porsi Balita
+       - "bumil": Porsi Bumil & Busui
+    3. Sertakan satuan (kkal atau g) pada setiap nilai.
+    4. HANYA hasilkan JSON valid sesuai struktur persis berikut:
+
     {
-      "kecil": {"kalori": "439,3 kkal", "protein": "23,3 g", "lemak": "9,8 g", "karbo": "64 g", "serat": "1,6 g"},
-      "besar": {"kalori": "606,5 kkal", "protein": "27,8 g", "lemak": "17,1 g", "karbo": "85,1 g", "serat": "1,8 g"},
-      "balita": {"kalori": "439,3 kkal", "protein": "23,3 g", "lemak": "9,8 g", "karbo": "64 g", "serat": "1,6 g"},
-      "bumil": {"kalori": "773,5 kkal", "protein": "35,5 g", "lemak": "22,5 g", "karbo": "105,5 g", "serat": "1,9 g"}
+      "kecil": {"kalori": "... kkal", "protein": "... g", "lemak": "... g", "karbo": "... g", "serat": "... g"},
+      "besar": {"kalori": "... kkal", "protein": "... g", "lemak": "... g", "karbo": "... g", "serat": "... g"},
+      "balita": {"kalori": "... kkal", "protein": "... g", "lemak": "... g", "karbo": "... g", "serat": "... g"},
+      "bumil": {"kalori": "... kkal", "protein": "... g", "lemak": "... g", "karbo": "... g", "serat": "... g"}
     }
     `;
 
@@ -129,7 +152,12 @@ async function runGeminiVisionAI(imgElement) {
             }
           ]
         }
-      ]
+      ],
+      // 🎯 KONFIGURASI AGAR HASIL PRESISI DAN JSON MURNI
+      generationConfig: {
+        temperature: 0,
+        response_mime_type: "application/json"
+      }
     };
 
     const res = await fetch(geminiEndpoint, {
@@ -141,16 +169,18 @@ async function runGeminiVisionAI(imgElement) {
     const result = await res.json();
 
     if (result.candidates && result.candidates[0].content.parts[0].text) {
-      let rawText = result.candidates[0].content.parts[0].text;
-      console.log("--- RAW GEMINI AI RESPONSE ---", rawText);
-
-      // Bersihkan karakter markdown ```json jika ada
-      rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+      let rawText = result.candidates[0].content.parts[0].text.trim();
+      console.log("--- HASIL EKSTRAKSI GEMINI AI ---", rawText);
 
       const parsedJSON = JSON.parse(rawText);
       currentNutrition = { ...currentNutrition, ...parsedJSON };
 
-      console.log("--- HASIL PARSE GEMINI AI ---", currentNutrition);
+      // 💾 SIMPAN HASIL KE LOCALSTORAGE
+      if (fileId) {
+        const cacheKey = `nutrition_data_${fileId}`;
+        localStorage.setItem(cacheKey, JSON.stringify(currentNutrition));
+        console.log(`💾 Data gizi foto ${fileId} berhasil disimpan ke localStorage!`);
+      }
     }
 
     if (menuTitleEl) menuTitleEl.textContent = originalTitle;
